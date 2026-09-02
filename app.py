@@ -1,6 +1,7 @@
 import streamlit as st
 from pipeline import process_expedient
 from notification_generator import generate_notification
+from github_client import fetch_documents_from_github
 
 
 st.set_page_config(
@@ -57,15 +58,35 @@ if analizar:
     if not aspirante.strip():
         st.error("Ingresa el nombre del aspirante")
         st.stop()
-    
-    with st.spinner(f"Procesando expediente de '{aspirante}'... esto tarda 20-30 segundos"):
+
+    # Validacion previa: verificar que el aspirante existe (fast HTTP check)
+    try:
+        docs = fetch_documents_from_github(aspirante)
+    except Exception as e:
+        if "404" in str(e):
+            st.error(
+                f"⚠️ Aspirante **'{aspirante}'** no encontrado en el sistema institucional. "
+                "Verifica el nombre e intenta nuevamente."
+            )
+        else:
+            st.error(f"Error consultando el sistema institucional: {e}")
+        st.stop()
+
+    if not docs:
+        st.warning(
+            f"El aspirante **'{aspirante}'** existe pero no tiene documentos cargados en el sistema."
+        )
+        st.stop()
+
+    # Ya validado — ahora si procesar con spinner
+    with st.spinner(f"Procesando {len(docs)} documentos con IA... esto tarda 20-30 segundos"):
         try:
             expediente = process_expedient(aspirante)
             notificacion = generate_notification(expediente)
         except Exception as e:
             st.error(f"Error procesando expediente: {e}")
             st.stop()
-    
+
     # Save in session state so results persist
     st.session_state['expediente'] = expediente
     st.session_state['notificacion'] = notificacion
