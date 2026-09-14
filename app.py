@@ -11,6 +11,12 @@ st.set_page_config(
 )
 
 
+# Repositorio publico con los expedientes de ejemplo. Quien quiera probar
+# el MVP con sus propios documentos clona este repo y crea su carpeta.
+REPO_DOCS = "https://github.com/ferquintero2013/TestUtel"
+REPO_CODIGO = "https://github.com/ferquintero2013/postulaciones-mvp-utel"
+
+
 # ============= HEADER =============
 st.title("🎓 UTEL - Validacion Inteligente de Documentos")
 st.markdown(
@@ -32,19 +38,53 @@ with st.sidebar:
     6. Se genera **notificacion automatica** al aspirante
     """)
     st.divider()
+
+    st.header("Documentos de prueba")
+    st.markdown(f"""
+    Los expedientes viven en un repositorio publico:
+    [**TestUtel**]({REPO_DOCS})
+
+    Escribe uno de estos tres nombres en el campo:
+
+    - `ferney`
+    - `maira`
+    - `Test_general`
+
+    **Quieres probarlo con documentos propios?**
+    Clona [TestUtel]({REPO_DOCS}), crea una carpeta con el nombre que
+    quieras, mete ahi los documentos del expediente y ejecuta este
+    MVP apuntando a tu propio repositorio. El codigo tambien es
+    publico: [postulaciones-mvp-utel]({REPO_CODIGO}).
+    """)
+
+    st.divider()
     st.caption("**Stack**: Python + Streamlit + OpenAI GPT-4o + GitHub API")
     st.caption("**Autor**: Ferney Quintero")
     st.markdown("[Portafolio](https://ferney-portfolio.vercel.app/)")
 
 
 # ============= INPUT =============
+# El aviso va tambien fuera del sidebar: en movil el sidebar arranca
+# colapsado y quien llega no sabe que escribir en el campo.
+st.info(
+    f"Los expedientes de prueba estan en el repositorio publico "
+    f"[TestUtel]({REPO_DOCS}). Escribe uno de estos tres nombres: "
+    f"**ferney**, **maira** o **Test_general**. "
+    f"Si quieres probarlo con tus propios documentos, clona "
+    f"[el repositorio]({REPO_DOCS}) y crea tu propia carpeta.",
+    icon="📁"
+)
+
 col1, col2 = st.columns([3, 1])
 
 with col1:
     aspirante = st.text_input(
         "Nombre de la carpeta del aspirante",
         value="ferney",
-        help="Debe coincidir con la carpeta en el repo TestUtel"
+        help=(
+            "Debe coincidir con una carpeta del repositorio TestUtel. "
+            "Disponibles: ferney, maira, Test_general."
+        )
     )
 
 with col2:
@@ -56,7 +96,10 @@ with col2:
 # ============= PROCESSING + RESULTS =============
 if analizar:
     if not aspirante.strip():
-        st.error("Ingresa el nombre del aspirante")
+        st.error(
+            "Ingresa el nombre del aspirante. Puedes usar ferney, maira "
+            "o Test_general."
+        )
         st.stop()
 
     # Validacion previa: verificar que el aspirante existe (fast HTTP check)
@@ -65,8 +108,12 @@ if analizar:
     except Exception as e:
         if "404" in str(e):
             st.error(
-                f"⚠️ Aspirante **'{aspirante}'** no encontrado en el sistema institucional. "
-                "Verifica el nombre e intenta nuevamente."
+                f"⚠️ Aspirante **'{aspirante}'** no encontrado en el sistema "
+                "institucional.\n\n"
+                "Los expedientes disponibles son **ferney**, **maira** y "
+                "**Test_general**. Si quieres probar con documentos propios, "
+                f"clona el repositorio [TestUtel]({REPO_DOCS}) "
+                "y crea tu carpeta."
             )
         else:
             st.error(f"Error consultando el sistema institucional: {e}")
