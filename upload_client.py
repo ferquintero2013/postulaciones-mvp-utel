@@ -57,6 +57,7 @@ freno real es el tope de gasto de la cuenta de OpenAI.
 """
 
 import base64
+import hashlib
 import io
 
 from PIL import Image, ImageOps
@@ -199,11 +200,19 @@ def construir_documentos(archivos, tipos_esperados=None):
                 "filename": nombre,
                 "url": a_data_uri(jpeg),
                 "expected_type": esperado,
-                # Las tres claves con guion bajo son solo para mostrar en
-                # la interfaz. El pipeline no las usa.
+                # Las claves con guion bajo no son parte del contrato que
+                # consume el pipeline: son para la interfaz y para la
+                # cache.
                 "_origen": "subido",
                 "_bytes_enviados": len(jpeg),
                 "_tamano": tamano,
+                # Huella del contenido, no del nombre. Es lo que permite
+                # agregar un documento al expediente sin volver a pagar
+                # la lectura de los que ya se leyeron: el mismo archivo
+                # da la misma huella aunque se vuelva a subir con otro
+                # nombre, y un archivo distinto da otra aunque se llame
+                # igual.
+                "_huella": hashlib.sha256(jpeg).hexdigest(),
             }
         )
 

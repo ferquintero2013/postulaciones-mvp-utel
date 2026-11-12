@@ -7,7 +7,7 @@ from github_client import (
     infer_type_from_filename,
 )
 from notification_generator import generate_notification
-from pipeline import process_expedient
+from pipeline import huella, process_expedient
 from upload_client import MAX_ARCHIVOS, construir_documentos
 
 
@@ -253,16 +253,38 @@ else:
 
 
 # ============= PROCESSING =============
+
+# Lecturas ya hechas, indexadas por huella del contenido. Sobrevive entre
+# corridas dentro de la misma sesion. Un expediente se arma por partes:
+# el dictamen dice que falta la inscripcion, el aspirante la agrega, y se
+# vuelve a analizar. Sin esto, agregar un documento costaria releer todo
+# lo demas, y ese costo lo paga quien hospeda el demo.
+if 'lecturas' not in st.session_state:
+    st.session_state['lecturas'] = {}
+
 if analizar and documentos:
+    ya_leidos = sum(1 for d in documentos if huella(d) in st.session_state['lecturas'])
+    por_leer = len(documentos) - ya_leidos
+
+    if ya_leidos:
+        st.caption(
+            f"{ya_leidos} documento(s) ya estaban leidos y se reutilizan. "
+            f"Se envian {por_leer} a la IA."
+        )
+
     with st.spinner(
-        f"Procesando {len(documentos)} documentos con IA... "
-        "esto tarda 20-30 segundos"
+        f"Procesando {por_leer} documento(s) con IA... "
+        "esto tarda unos 5 segundos por documento"
     ):
         try:
             # Los documentos ya estan en la mano, asi que se pasan por
             # parametro. En la rama de ejemplo eso ademas evita la segunda
             # consulta identica a la API de GitHub que se hacia antes.
-            expediente = process_expedient(etiqueta, documentos=documentos)
+            expediente = process_expedient(
+                etiqueta,
+                documentos=documentos,
+                cache=st.session_state['lecturas'],
+            )
             notificacion = generate_notification(expediente)
         except Exception as e:
             st.error(f"Error procesando expediente: {e}")
@@ -271,6 +293,7 @@ if analizar and documentos:
     # Save in session state so results persist
     st.session_state['expediente'] = expediente
     st.session_state['notificacion'] = notificacion
+    st.session_state['modo_usado'] = modo
 
 
 # ============= DISPLAY (only if we have results) =============
@@ -293,6 +316,33 @@ if 'expediente' in st.session_state:
     st.markdown("### Dictamen del expediente")
     st.markdown(f"# :{color}[{estado}]")
     st.info(expediente['mensaje_principal'])
+
+    # ---- Que hacer cuando falta algo ----
+    # El dictamen decia "falta la inscripcion" y no habia por donde
+    # darsela. La notificacion de mas abajo es un correo al aspirante, y
+    # pedirle que envie un documento tiene sentido en un correo; en una
+    # pantalla donde acabas de subir archivos, se lee como un boton roto.
+    faltantes = expediente['metricas'].get('documentos_faltantes') or []
+    if faltantes:
+        lista = ", ".join(f"**{t}**" for t in faltantes)
+        if st.session_state.get('modo_usado') == MODO_SUBIR:
+            st.warning(
+                f"Faltan {len(faltantes)} documento(s) para que el "
+                f"expediente quede completo: {lista}.\n\n"
+                "Agregalos en el cargador de arriba, junto a los que ya "
+                "subiste, y vuelve a pulsar **Analizar documentos**. Los "
+                "que ya se leyeron no se vuelven a procesar.",
+                icon="📎"
+            )
+        else:
+            st.warning(
+                f"Faltan {len(faltantes)} documento(s) para que el "
+                f"expediente quede completo: {lista}.\n\n"
+                "Este es un expediente de ejemplo, asi que sus documentos "
+                f"son los que son. Para armar uno completo con los tuyos, "
+                f"cambia arriba a **{MODO_SUBIR}**.",
+                icon="📎"
+            )
 
     # ---- Metrics ----
     st.markdown("### Metricas del proceso")
@@ -323,6 +373,12 @@ if 'expediente' in st.session_state:
 
     with tab1:
         st.markdown("**Mensaje que se enviaria al aspirante:**")
+        st.caption(
+            "Vista previa de un correo. En un despliegue real saldria por "
+            "email, y por eso el texto le pide al aspirante que envie lo "
+            "que falta en vez de ofrecerle un boton. Para agregarlo aqui, "
+            "usa el cargador de arriba."
+        )
         st.markdown(f"> {notificacion}")
 
     with tab2:

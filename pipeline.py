@@ -6,7 +6,18 @@ from document_validator import validate_document
 from expedient_analyzer import analyze_expedient
 
 
-def process_expedient(aspirante_folder, documentos=None):
+def huella(doc):
+    """Clave estable de un documento, para la cache de lecturas.
+
+    Los documentos subidos traen `_huella`, que es el sha256 del
+    contenido. Los que vienen del sistema institucional no la traen, y
+    ahi la direccion de descarga sirve igual: es estable mientras el
+    archivo no cambie.
+    """
+    return doc.get('_huella') or doc.get('url')
+
+
+def process_expedient(aspirante_folder, documentos=None, cache=None):
     """Processes the applicant's complete expedient with expedient-level analysis.
 
     `documentos` permite inyectar la lista ya construida, que es como
@@ -23,6 +34,12 @@ def process_expedient(aspirante_folder, documentos=None):
     llamar aqui, porque los usa para validar que el aspirante exista.
     Pasarlos por parametro evita la segunda consulta identica a la API
     de GitHub que se hacia en cada corrida.
+
+    `cache` es un diccionario {huella: documento_validado} que sobrevive
+    entre corridas. Un expediente se arma por partes: el dictamen dice
+    que falta la inscripcion, el aspirante la agrega, y se vuelve a
+    analizar. Sin cache eso costaria releer los cuatro documentos que no
+    cambiaron. Se pasa el mismo diccionario y el pipeline lo llena.
     """
 
     if documentos is None:
@@ -38,16 +55,30 @@ def process_expedient(aspirante_folder, documentos=None):
     start_time = time.time()
     
     for doc in documentos:
+        clave = huella(doc)
+
+        # Un documento que ya se leyo no se vuelve a leer. Importa
+        # cuando el dictamen sale INCOMPLETO y el usuario agrega el que
+        # falta: sin esto, agregar un documento costaria releer todo el
+        # expediente, y el costo lo paga quien hospeda el demo.
+        if cache is not None and clave in cache:
+            print(f"   Reusing: {doc['filename']} (ya leido)")
+            resultados.append(cache[clave])
+            continue
+
         print(f"   Analyzing: {doc['filename']}...")
-        
+
         try:
             extracted = analyze_document_with_vision(doc)
             validated = validate_document(doc, extracted)
             resultados.append(validated)
-            
+
+            if cache is not None and clave:
+                cache[clave] = validated
+
             emoji = {'APROBADO': 'OK', 'REQUIERE_CORRECCION': 'WARN', 'REVISION_MANUAL': 'FAIL'}
             print(f"   [{emoji.get(validated['estado'], '?')}] {validated['estado']}")
-            
+
         except Exception as e:
             print(f"   ERROR: {e}")
     

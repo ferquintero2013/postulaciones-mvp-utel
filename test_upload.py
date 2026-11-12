@@ -29,8 +29,10 @@ import sys
 
 from PIL import Image
 
+import pipeline
 from document_validator import validate_document
-from github_client import SIN_TIPO_ESPERADO, infer_type_from_filename
+from github_client import SIN_TIPO_ESPERADO, TIPOS, infer_type_from_filename
+from pipeline import huella
 from upload_client import LADO_MAXIMO, MAX_ARCHIVOS, MAX_BYTES_ORIGEN, construir_documentos
 
 
@@ -293,6 +295,96 @@ verificar(
     resultado["problemas_detectados"] == [],
     "problemas: {}".format(resultado["problemas_detectados"]),
 )
+
+
+print("\n--- Huella del contenido y cache de lecturas ---\n")
+
+docs_a, _ = construir_documentos([imagen("cedula.jpg", tamano=(700, 500))])
+docs_b, _ = construir_documentos([imagen("otro_nombre.jpg", tamano=(700, 500))])
+docs_c, _ = construir_documentos([imagen("cedula.jpg", tamano=(701, 500))])
+
+verificar(
+    "el mismo contenido da la misma huella aunque cambie el nombre",
+    docs_a[0]["_huella"] == docs_b[0]["_huella"],
+)
+verificar(
+    "un contenido distinto da otra huella aunque el nombre sea igual",
+    docs_a[0]["_huella"] != docs_c[0]["_huella"],
+)
+verificar(
+    "huella() de un documento subido usa la huella del contenido",
+    huella(docs_a[0]) == docs_a[0]["_huella"],
+)
+verificar(
+    "huella() de un documento institucional cae a la direccion",
+    huella({"url": "https://ejemplo/cedula.png"}) == "https://ejemplo/cedula.png",
+)
+
+# La cache existe por una sola razon: que agregar el documento que falta
+# no cueste releer los que ya se leyeron. Eso se mide contando llamadas,
+# no suponiendolo. Se reemplaza la lectura con Vision por una falsa.
+llamadas = []
+
+
+def vision_falsa(doc):
+    llamadas.append(doc["filename"])
+    return {
+        "tipo_detectado": doc["expected_type"] if doc["expected_type"] in TIPOS else "cedula",
+        "nombre_completo": "Ferney Quintero",
+        "numero_identificacion": "1098765432",
+        "fecha_documento": "2015-03-10",
+        "confianza": 0.93,
+        "legibilidad": "alta",
+        "problemas_detectados": [],
+    }
+
+
+vision_real = pipeline.analyze_document_with_vision
+pipeline.analyze_document_with_vision = vision_falsa
+try:
+    # Cada documento tiene que tener contenido distinto, porque la huella
+    # es del contenido y no del nombre. Tres imagenes grises identicas
+    # darian la misma huella y la cache las colapsaria en una, que es
+    # correcto pero no es lo que esta prueba quiere medir.
+    cache = {}
+    primeros, _ = construir_documentos(
+        [
+            imagen("cedula.jpg", tamano=(800, 600)),
+            imagen("diploma.jpg", tamano=(810, 600)),
+            imagen("notas.jpg", tamano=(820, 600)),
+        ]
+    )
+    pipeline.process_expedient("prueba", documentos=primeros, cache=cache)
+    verificar(
+        "la primera corrida lee los 3 documentos",
+        len(llamadas) == 3,
+        "llamadas: {}".format(llamadas),
+    )
+
+    # Ahora el usuario agrega el que faltaba. Los tres anteriores son los
+    # mismos bytes, asi que traen la misma huella.
+    llamadas.clear()
+    agregado, _ = construir_documentos(
+        [
+            imagen("cedula.jpg", tamano=(800, 600)),
+            imagen("diploma.jpg", tamano=(810, 600)),
+            imagen("notas.jpg", tamano=(820, 600)),
+            imagen("inscripcion.jpg", tamano=(830, 600)),
+        ]
+    )
+    pipeline.process_expedient("prueba", documentos=agregado, cache=cache)
+    verificar(
+        "al agregar uno, solo se lee ese uno",
+        len(llamadas) == 1 and "inscripcion" in llamadas[0],
+        "llamadas: {}".format(llamadas),
+    )
+    verificar(
+        "la cache quedo con los 4 documentos",
+        len(cache) == 4,
+        "cache: {}".format(len(cache)),
+    )
+finally:
+    pipeline.analyze_document_with_vision = vision_real
 
 
 print("")

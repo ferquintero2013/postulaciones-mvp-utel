@@ -112,6 +112,14 @@ Antes de enviarla, cada imagen se reempaqueta como JPEG por tres razones:
 
 Lo que no se gana es peso, y vale decirlo porque la primera version de este documento afirmaba lo contrario. Se midio con una cedula real del repositorio de prueba: **129 KB en PNG salieron como 327 KB en JPEG**. Reescalar una foto grande si aliviana mucho, pero una imagen que ya estaba por debajo del lado maximo solo se reempaqueta, y un JPEG de calidad 85 sobre un escaneo de colores planos puede pesar mas que el PNG original. Se acepta ese costo porque la razon 3 vale mas que 200 KB de subida, y porque los tokens los fija el tamano en pixeles, no los bytes del archivo.
 
+## Un expediente se arma por partes
+
+El dictamen INCOMPLETO no es un callejon sin salida. Dice cuales documentos faltan, y se agregan en el mismo cargador para volver a analizar.
+
+Lo que hace que eso sea practico es que **cada lectura se cachea por una huella del contenido**, no del nombre. Agregar la inscripcion a un expediente de cuatro documentos cuesta una llamada a la IA, no cinco. El mismo archivo subido otra vez con otro nombre da la misma huella y se reutiliza; un archivo distinto con el mismo nombre da otra y se lee. Hay una prueba que lo mide contando llamadas, con la lectura real reemplazada por una falsa.
+
+Esto importa por una razon que no es tecnica: la notificacion que genera el sistema es un correo dirigido al aspirante, y pedirle por correo que envie lo que falta tiene todo el sentido. En una pantalla donde el usuario acaba de subir archivos, ese mismo texto se lee como un boton roto. Por eso el dictamen ahora dice, aparte del correo, que hacer y donde.
+
 ## Como correrlo localmente
 
 ### 1. Clonar el repo
@@ -161,7 +169,7 @@ Se abre en http://localhost:8501
 python test_upload.py
 ```
 
-28 verificaciones que no llaman a ninguna API y no gastan un solo token, asi que se pueden correr en cada cambio sin pensarlo. Cubren el contrato compartido entre las dos fuentes de documentos, la normalizacion de imagenes (reescalado, rotacion EXIF, PNG con transparencia, metadatos descartados), los archivos que deben rechazarse y por que, y las reglas del validador que toca la carga de archivos.
+35 verificaciones que no llaman a ninguna API y no gastan un solo token, asi que se pueden correr en cada cambio sin pensarlo. Cubren el contrato compartido entre las dos fuentes de documentos, la normalizacion de imagenes (reescalado, rotacion EXIF, PNG con transparencia, metadatos descartados), los archivos que deben rechazarse y por que, las reglas del validador que toca la carga de archivos, y la cache de lecturas.
 
 Esa ultima parte entro por un bug real. La regla 1 compara el tipo detectado contra el tipo esperado, y la condicion era `if document['expected_type']`. La cadena `'desconocido'` es verdadera en Python, asi que todo archivo sin tipo esperado producia el problema falso "Tipo detectado (cedula) no coincide con esperado (desconocido)". Con los documentos de ejemplo casi no se veia, porque se llaman `cedula.jpg` y `diploma.png`. Con archivos que sube cualquiera, un nombre como `IMG_4821.jpg` es lo normal, y el falso positivo habria pasado a ser la regla en vez de la excepcion. Las pruebas verifican las dos mitades del arreglo: que no se invente el problema cuando no hay expectativa, y que la regla siga disparando cuando el desajuste es real. Un arreglo que apaga la regla entera no es un arreglo.
 
@@ -170,7 +178,7 @@ Esa ultima parte entro por un bug real. La regla 1 compara el tipo detectado con
 - **El demo publico no tiene autenticacion.** Cada documento que entra es una llamada a GPT-4o que alguien paga. Hay topes de 6 documentos por corrida y de 20 MB por archivo, pero eso acota el costo de una corrida, no el de un visitante insistente. El unico freno real es el tope de gasto de la cuenta de OpenAI.
 - **No hay filtro de confidencialidad.** Esta solucion no decide que puede salir hacia un LLM y que no. En un despliegue real esa es la primera pieza a disenar, y hay tres caminos segun el nivel de exigencia: pactar los terminos de confidencialidad en el contrato con el proveedor, definir desde el principio una lista explicita de que campos pueden salir, o alojar el modelo en infraestructura propia, que es lo mas seguro y tambien lo mas caro.
 - **La confianza la declara el modelo**, con lo que eso implica: hereda la variabilidad de quien la emite. Esta mitigada, no resuelta, por las cuatro reglas deterministas que la acompanan.
-- **El expediente completo son cinco documentos.** Subir menos da un dictamen INCOMPLETO con la lista de los que faltan. No es un error, es la regla de expediente funcionando.
+- **El expediente completo son cinco documentos.** Subir menos da un dictamen INCOMPLETO con la lista de los que faltan. No es un error, es la regla de expediente funcionando: se agregan los que falten y se vuelve a analizar.
 
 ## Autor
 
