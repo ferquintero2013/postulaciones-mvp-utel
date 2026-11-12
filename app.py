@@ -6,8 +6,9 @@ from github_client import (
     fetch_documents_from_github,
     infer_type_from_filename,
 )
+from expedient_analyzer import analyze_expedient
 from notification_generator import generate_notification
-from pipeline import huella, process_expedient
+from pipeline import analizar_documentos, huella, process_expedient
 from upload_client import MAX_ARCHIVOS, construir_documentos
 
 
@@ -317,32 +318,115 @@ if 'expediente' in st.session_state:
     st.markdown(f"# :{color}[{estado}]")
     st.info(expediente['mensaje_principal'])
 
-    # ---- Que hacer cuando falta algo ----
+    # ---- Completar el expediente, aqui mismo ----
+    #
     # El dictamen decia "falta la inscripcion" y no habia por donde
-    # darsela. La notificacion de mas abajo es un correo al aspirante, y
-    # pedirle que envie un documento tiene sentido en un correo; en una
-    # pantalla donde acabas de subir archivos, se lee como un boton roto.
+    # darsela. El primer intento de arreglo fue un aviso que decia "subelo
+    # en el cargador de arriba", y no sirvio: una instruccion para
+    # desplazarse hasta otra parte de la pantalla no es una opcion, es
+    # una tarea. El control va donde aparece el problema.
+    #
+    # Funciona en los dos modos. Un expediente no es mas que una lista de
+    # documentos ya validados, y de donde salio cada uno deja de importar
+    # en cuanto esta leido: por eso a un expediente de ejemplo tambien se
+    # le pueden agregar documentos propios.
     faltantes = expediente['metricas'].get('documentos_faltantes') or []
+
     if faltantes:
         lista = ", ".join(f"**{t}**" for t in faltantes)
-        if st.session_state.get('modo_usado') == MODO_SUBIR:
-            st.warning(
-                f"Faltan {len(faltantes)} documento(s) para que el "
-                f"expediente quede completo: {lista}.\n\n"
-                "Agregalos en el cargador de arriba, junto a los que ya "
-                "subiste, y vuelve a pulsar **Analizar documentos**. Los "
-                "que ya se leyeron no se vuelven a procesar.",
-                icon="📎"
+        st.warning(
+            f"Faltan {len(faltantes)} documento(s) para que el expediente "
+            f"quede completo: {lista}.",
+            icon="📎"
+        )
+
+    with st.expander(
+        "Agregar documentos al expediente" + (f" (faltan: {', '.join(faltantes)})" if faltantes else ""),
+        expanded=bool(faltantes),
+    ):
+        st.caption(
+            "Se lee solo lo que agregues. Los documentos que ya estan en "
+            "el expediente no se vuelven a procesar. Si subes un archivo "
+            "con el mismo nombre que uno ya analizado, lo reemplaza."
+        )
+
+        nuevos_archivos = st.file_uploader(
+            "Documentos a agregar",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
+            key="cargador_faltantes",
+            label_visibility="collapsed",
+        )
+
+        tipos_nuevos = []
+        if nuevos_archivos:
+            for idx, archivo in enumerate(nuevos_archivos):
+                c_nombre, c_tipo = st.columns([2, 1])
+                with c_nombre:
+                    st.write("")
+                    st.write(f"`{archivo.name}`")
+                with c_tipo:
+                    inferido = infer_type_from_filename(archivo.name)
+                    # Si el documento que falta es uno solo y no se pudo
+                    # inferir nada del nombre, se propone ese: es lo que
+                    # el usuario casi con seguridad viene a entregar.
+                    if inferido not in TIPOS and len(faltantes) == 1:
+                        inferido = faltantes[0]
+                    indice = OPCIONES_TIPO.index(inferido) if inferido in TIPOS else 0
+                    elegido = st.selectbox(
+                        "Tipo esperado",
+                        OPCIONES_TIPO,
+                        index=indice,
+                        key=f"tipo_nuevo_{idx}_{archivo.name}",
+                        label_visibility="collapsed",
+                    )
+                tipos_nuevos.append(
+                    SIN_TIPO_ESPERADO if elegido == OPCION_SIN_TIPO else elegido
+                )
+
+        if st.button(
+            "Agregar al expediente",
+            type="primary",
+            disabled=not nuevos_archivos,
+            key="boton_agregar",
+        ):
+            docs_nuevos, rechazos_nuevos = construir_documentos(
+                nuevos_archivos, tipos_nuevos
             )
-        else:
-            st.warning(
-                f"Faltan {len(faltantes)} documento(s) para que el "
-                f"expediente quede completo: {lista}.\n\n"
-                "Este es un expediente de ejemplo, asi que sus documentos "
-                f"son los que son. Para armar uno completo con los tuyos, "
-                f"cambia arriba a **{MODO_SUBIR}**.",
-                icon="📎"
-            )
+
+            if rechazos_nuevos:
+                detalle = "\n".join(f"- `{n}`: {m}" for n, m in rechazos_nuevos)
+                st.warning(f"**Archivos que no entraron:**\n{detalle}")
+
+            if not docs_nuevos:
+                st.error("Ninguno de los archivos se pudo procesar.")
+            else:
+                with st.spinner(
+                    f"Leyendo {len(docs_nuevos)} documento(s) y volviendo a "
+                    "decidir el expediente..."
+                ):
+                    try:
+                        validados_nuevos = analizar_documentos(
+                            docs_nuevos, cache=st.session_state['lecturas']
+                        )
+
+                        # Reemplazar por nombre en vez de acumular: volver a
+                        # subir 'cedula.png' corrige la que estaba, no crea
+                        # un expediente con dos cedulas.
+                        nombres_nuevos = {d['filename'] for d in validados_nuevos}
+                        anteriores = [
+                            d for d in expediente['documentos']
+                            if d['filename'] not in nombres_nuevos
+                        ]
+
+                        completo = analyze_expedient(anteriores + validados_nuevos)
+                        st.session_state['expediente'] = completo
+                        st.session_state['notificacion'] = generate_notification(completo)
+                    except Exception as e:
+                        st.error(f"Error agregando documentos: {e}")
+                        st.stop()
+
+                st.rerun()
 
     # ---- Metrics ----
     st.markdown("### Metricas del proceso")
@@ -376,8 +460,8 @@ if 'expediente' in st.session_state:
         st.caption(
             "Vista previa de un correo. En un despliegue real saldria por "
             "email, y por eso el texto le pide al aspirante que envie lo "
-            "que falta en vez de ofrecerle un boton. Para agregarlo aqui, "
-            "usa el cargador de arriba."
+            "que falta en vez de ofrecerle un boton. Aqui si hay boton: "
+            "**Agregar documentos al expediente**, arriba del dictamen."
         )
         st.markdown(f"> {notificacion}")
 

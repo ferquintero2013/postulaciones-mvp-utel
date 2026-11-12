@@ -31,6 +31,7 @@ from PIL import Image
 
 import pipeline
 from document_validator import validate_document
+from expedient_analyzer import analyze_expedient
 from github_client import SIN_TIPO_ESPERADO, TIPOS, infer_type_from_filename
 from pipeline import huella
 from upload_client import LADO_MAXIMO, MAX_ARCHIVOS, MAX_BYTES_ORIGEN, construir_documentos
@@ -382,6 +383,82 @@ try:
         "la cache quedo con los 4 documentos",
         len(cache) == 4,
         "cache: {}".format(len(cache)),
+    )
+
+    # Lo que hace el boton "Agregar al expediente": leer SOLO lo nuevo y
+    # volver a decidir con los validados que ya se tenian, sin rehacer el
+    # expediente entero. Es el camino que arregla el reporte original.
+    llamadas.clear()
+    base, _ = construir_documentos(
+        [
+            imagen("cedula.jpg", tamano=(900, 600)),
+            imagen("diploma.jpg", tamano=(910, 600)),
+            imagen("notas.jpg", tamano=(920, 600)),
+            imagen("pago.jpg", tamano=(930, 600)),
+        ]
+    )
+    cache2 = {}
+    validados = pipeline.analizar_documentos(base, cache=cache2)
+    exp_parcial = analyze_expedient(validados)
+
+    verificar(
+        "con 4 de 5 el expediente sale INCOMPLETO y nombra el que falta",
+        exp_parcial["estado_expediente"] == "INCOMPLETO"
+        and exp_parcial["metricas"]["documentos_faltantes"] == ["inscripcion"],
+        "{} / {}".format(
+            exp_parcial["estado_expediente"],
+            exp_parcial["metricas"]["documentos_faltantes"],
+        ),
+    )
+
+    llamadas.clear()
+    agregado, _ = construir_documentos(
+        [imagen("inscripcion.jpg", tamano=(940, 600))], tipos_esperados=["inscripcion"]
+    )
+    validados_nuevos = pipeline.analizar_documentos(agregado, cache=cache2)
+
+    nombres_nuevos = {d["filename"] for d in validados_nuevos}
+    anteriores = [d for d in validados if d["filename"] not in nombres_nuevos]
+    exp_completo = analyze_expedient(anteriores + validados_nuevos)
+
+    verificar(
+        "agregar el que falta cuesta UNA lectura, no cinco",
+        len(llamadas) == 1,
+        "llamadas: {}".format(llamadas),
+    )
+    verificar(
+        "y el expediente queda completo",
+        exp_completo["metricas"]["documentos_faltantes"] == []
+        and exp_completo["metricas"]["total_documentos"] == 5,
+        "{} documentos, faltan {}".format(
+            exp_completo["metricas"]["total_documentos"],
+            exp_completo["metricas"]["documentos_faltantes"],
+        ),
+    )
+
+    # Volver a subir un archivo con el mismo nombre corrige el que estaba,
+    # no crea un expediente con dos cedulas.
+    llamadas.clear()
+    corregido, _ = construir_documentos(
+        [imagen("cedula.jpg", tamano=(960, 600))], tipos_esperados=["cedula"]
+    )
+    validados_corr = pipeline.analizar_documentos(corregido, cache=cache2)
+    nombres_corr = {d["filename"] for d in validados_corr}
+    restantes = [
+        d for d in exp_completo["documentos"] if d["filename"] not in nombres_corr
+    ]
+    exp_corregido = analyze_expedient(restantes + validados_corr)
+
+    verificar(
+        "resubir un nombre ya presente reemplaza en vez de duplicar",
+        exp_corregido["metricas"]["total_documentos"] == 5,
+        "quedaron {} documentos".format(
+            exp_corregido["metricas"]["total_documentos"]
+        ),
+    )
+    verificar(
+        "y hay una sola cedula en el expediente",
+        sum(1 for d in exp_corregido["documentos"] if d["filename"] == "cedula.jpg") == 1,
     )
 finally:
     pipeline.analyze_document_with_vision = vision_real

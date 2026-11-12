@@ -124,9 +124,13 @@ Los escaneos grandes, que son los que importan, bajan un 94% porque se reescalan
 
 ## Un expediente se arma por partes
 
-El dictamen INCOMPLETO no es un callejon sin salida. Dice cuales documentos faltan, y se agregan en el mismo cargador para volver a analizar.
+El dictamen INCOMPLETO no es un callejon sin salida. Dice cuales documentos faltan y trae, ahi mismo, un cargador para agregarlos.
+
+Ese detalle costo dos intentos. El primero fue un aviso que decia "subelo en el cargador de arriba", y no servia: una instruccion para desplazarse a otra parte de la pantalla no es una opcion, es una tarea. El control tiene que estar donde aparece el problema.
 
 Lo que hace que eso sea practico es que **cada lectura se cachea por una huella del contenido**, no del nombre. Agregar la inscripcion a un expediente de cuatro documentos cuesta una llamada a la IA, no cinco. El mismo archivo subido otra vez con otro nombre da la misma huella y se reutiliza; un archivo distinto con el mismo nombre da otra y se lee. Hay una prueba que lo mide contando llamadas, con la lectura real reemplazada por una falsa.
+
+Funciona en los dos modos, porque un expediente no es mas que una lista de documentos ya validados y de donde salio cada uno deja de importar en cuanto esta leido. A un expediente de ejemplo tambien se le pueden agregar documentos propios. Volver a subir un archivo con un nombre que ya estaba reemplaza al anterior en vez de duplicarlo.
 
 Esto importa por una razon que no es tecnica: la notificacion que genera el sistema es un correo dirigido al aspirante, y pedirle por correo que envie lo que falta tiene todo el sentido. En una pantalla donde el usuario acaba de subir archivos, ese mismo texto se lee como un boton roto. Por eso el dictamen ahora dice, aparte del correo, que hacer y donde.
 
@@ -179,7 +183,7 @@ Se abre en http://localhost:8501
 python test_upload.py
 ```
 
-35 verificaciones que no llaman a ninguna API y no gastan un solo token, asi que se pueden correr en cada cambio sin pensarlo. Cubren el contrato compartido entre las dos fuentes de documentos, la normalizacion de imagenes (reescalado, rotacion EXIF, PNG con transparencia, metadatos descartados), los archivos que deben rechazarse y por que, las reglas del validador que toca la carga de archivos, y la cache de lecturas.
+40 verificaciones que no llaman a ninguna API y no gastan un solo token, asi que se pueden correr en cada cambio sin pensarlo. Cubren el contrato compartido entre las dos fuentes de documentos, la normalizacion de imagenes (reescalado, rotacion EXIF, PNG con transparencia, metadatos descartados), los archivos que deben rechazarse y por que, las reglas del validador que toca la carga de archivos, la cache de lecturas, y el camino de completar un expediente incompleto.
 
 Esa ultima parte entro por un bug real. La regla 1 compara el tipo detectado contra el tipo esperado, y la condicion era `if document['expected_type']`. La cadena `'desconocido'` es verdadera en Python, asi que todo archivo sin tipo esperado producia el problema falso "Tipo detectado (cedula) no coincide con esperado (desconocido)". Con los documentos de ejemplo casi no se veia, porque se llaman `cedula.jpg` y `diploma.png`. Con archivos que sube cualquiera, un nombre como `IMG_4821.jpg` es lo normal, y el falso positivo habria pasado a ser la regla en vez de la excepcion. Las pruebas verifican las dos mitades del arreglo: que no se invente el problema cuando no hay expectativa, y que la regla siga disparando cuando el desajuste es real. Un arreglo que apaga la regla entera no es un arreglo.
 

@@ -17,6 +17,48 @@ def huella(doc):
     return doc.get('_huella') or doc.get('url')
 
 
+def analizar_documentos(documentos, cache=None):
+    """Lee y valida una lista de documentos. Devuelve los validados.
+
+    Es el nucleo del paso 2 y 3, separado de `process_expedient` para
+    poder analizar un documento suelto sin rehacer el expediente entero.
+    Lo usa la interfaz cuando el dictamen sale INCOMPLETO y el usuario
+    agrega el que falta: se lee solo ese y se vuelve a decidir con los
+    anteriores, que ya estaban validados.
+    """
+    resultados = []
+
+    for doc in documentos:
+        clave = huella(doc)
+
+        # Un documento que ya se leyo no se vuelve a leer. Importa
+        # cuando el dictamen sale INCOMPLETO y el usuario agrega el que
+        # falta: sin esto, agregar un documento costaria releer todo el
+        # expediente, y el costo lo paga quien hospeda el demo.
+        if cache is not None and clave in cache:
+            print(f"   Reusing: {doc['filename']} (ya leido)")
+            resultados.append(cache[clave])
+            continue
+
+        print(f"   Analyzing: {doc['filename']}...")
+
+        try:
+            extracted = analyze_document_with_vision(doc)
+            validated = validate_document(doc, extracted)
+            resultados.append(validated)
+
+            if cache is not None and clave:
+                cache[clave] = validated
+
+            emoji = {'APROBADO': 'OK', 'REQUIERE_CORRECCION': 'WARN', 'REVISION_MANUAL': 'FAIL'}
+            print(f"   [{emoji.get(validated['estado'], '?')}] {validated['estado']}")
+
+        except Exception as e:
+            print(f"   ERROR: {e}")
+
+    return resultados
+
+
 def process_expedient(aspirante_folder, documentos=None, cache=None):
     """Processes the applicant's complete expedient with expedient-level analysis.
 
@@ -50,38 +92,9 @@ def process_expedient(aspirante_folder, documentos=None, cache=None):
         print(f"1. Using {len(documentos)} documents provided by the caller.\n")
 
     print("2. Processing each document with Vision + Validation...\n")
-    
-    resultados = []
+
     start_time = time.time()
-    
-    for doc in documentos:
-        clave = huella(doc)
-
-        # Un documento que ya se leyo no se vuelve a leer. Importa
-        # cuando el dictamen sale INCOMPLETO y el usuario agrega el que
-        # falta: sin esto, agregar un documento costaria releer todo el
-        # expediente, y el costo lo paga quien hospeda el demo.
-        if cache is not None and clave in cache:
-            print(f"   Reusing: {doc['filename']} (ya leido)")
-            resultados.append(cache[clave])
-            continue
-
-        print(f"   Analyzing: {doc['filename']}...")
-
-        try:
-            extracted = analyze_document_with_vision(doc)
-            validated = validate_document(doc, extracted)
-            resultados.append(validated)
-
-            if cache is not None and clave:
-                cache[clave] = validated
-
-            emoji = {'APROBADO': 'OK', 'REQUIERE_CORRECCION': 'WARN', 'REVISION_MANUAL': 'FAIL'}
-            print(f"   [{emoji.get(validated['estado'], '?')}] {validated['estado']}")
-
-        except Exception as e:
-            print(f"   ERROR: {e}")
-    
+    resultados = analizar_documentos(documentos, cache=cache)
     elapsed = time.time() - start_time
     print(f"\n3. Document processing completed in {elapsed:.1f} seconds.\n")
     
