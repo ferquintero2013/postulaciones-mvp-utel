@@ -110,7 +110,17 @@ Antes de enviarla, cada imagen se reempaqueta como JPEG por tres razones:
 2. **Costo.** Una foto de 4000 px no se lee mejor que una de 2000 px cuando lo que hay que leer es un numero de documento, pero cuesta mas: la API cobra las imagenes por mosaicos y los mosaicos crecen con la resolucion. Se reescala al lado maximo de 2000 px.
 3. **Metadatos.** Reempaquetar descarta el EXIF, y el EXIF de una foto de celular puede traer coordenadas GPS, modelo del equipo y fecha. Nada de eso hace falta para leer un documento. Hay una prueba que lo verifica sobre los bytes que de verdad se envian, no es una promesa.
 
-Lo que no se gana es peso, y vale decirlo porque la primera version de este documento afirmaba lo contrario. Se midio con una cedula real del repositorio de prueba: **129 KB en PNG salieron como 327 KB en JPEG**. Reescalar una foto grande si aliviana mucho, pero una imagen que ya estaba por debajo del lado maximo solo se reempaqueta, y un JPEG de calidad 85 sobre un escaneo de colores planos puede pesar mas que el PNG original. Se acepta ese costo porque la razon 3 vale mas que 200 KB de subida, y porque los tokens los fija el tamano en pixeles, no los bytes del archivo.
+El peso, en cambio, depende del caso, y vale decirlo porque la primera version de este documento afirmaba que siempre bajaba. Medido sobre los cinco documentos reales del expediente de prueba:
+
+| Documento | Original | Enviado | |
+|---|---|---|---|
+| certificado de notas | 6219 KB | 395 KB | -94% |
+| comprobante de pago | 7379 KB | 452 KB | -94% |
+| diploma | 71 KB | 83 KB | +17% |
+| inscripcion | 38 KB | 50 KB | +32% |
+| cedula | 129 KB | 327 KB | +153% |
+
+Los escaneos grandes, que son los que importan, bajan un 94% porque se reescalan. Los que ya estaban por debajo del lado maximo solo se reempaquetan, y ahi un JPEG de calidad 85 sobre colores planos puede pesar mas que el PNG original. Se acepta ese costo porque la razon 3 vale mas que unos cientos de KB de subida, y porque los tokens los fija el tamano en pixeles, no los bytes del archivo.
 
 ## Un expediente se arma por partes
 
