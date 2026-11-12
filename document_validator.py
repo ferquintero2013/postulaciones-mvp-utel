@@ -1,5 +1,7 @@
 import re
 
+from github_client import SIN_TIPO_ESPERADO, TIPOS
+
 
 def validate_document(document, extracted):
     """Applies business rules and decides the document state."""
@@ -17,20 +19,38 @@ def validate_document(document, extracted):
             campos.get('fecha')
         )
     
-    # Rule 1: detected type matches expected type
-    if document['expected_type'] and extracted.get('tipo_detectado') != document['expected_type']:
-        problemas.append(
-            f"Tipo detectado ({extracted.get('tipo_detectado')}) no coincide con esperado ({document['expected_type']})"
-        )
+    # Rule 1: detected type matches expected type.
+    #
+    # Solo se compara cuando de verdad habia una expectativa. El tipo
+    # esperado es un dato institucional: es el documento que se le pidio
+    # al aspirante. Cuando no se conoce, llega como SIN_TIPO_ESPERADO, y
+    # entonces no hay nada contra que comparar.
+    #
+    # Antes la condicion era solo `if document['expected_type']`, y la
+    # cadena 'desconocido' es verdadera, asi que todo archivo sin
+    # expectativa producia el problema "Tipo detectado (cedula) no
+    # coincide con esperado (desconocido)". En la ruta de GitHub casi
+    # nunca se veia, porque los archivos de prueba se llaman cedula.jpg
+    # y diploma.png. Con documentos que sube cualquiera, un nombre como
+    # IMG_4821.jpg es lo normal, y el falso positivo pasaria a ser la
+    # regla en vez de la excepcion.
+    esperado = document.get('expected_type')
+    if esperado and esperado != SIN_TIPO_ESPERADO:
+        if extracted.get('tipo_detectado') != esperado:
+            problemas.append(
+                f"Tipo detectado ({extracted.get('tipo_detectado')}) no coincide con esperado ({esperado})"
+            )
     
     # Rule 2: name present with minimum length
     nombre = extracted.get('nombre_completo', '') or ''
     if len(nombre.strip()) < 3:
         problemas.append('Nombre no legible o ausente')
     
-    # Rule 3: valid identification number
-    tipos_con_id = ['cedula', 'diploma', 'notas', 'inscripcion', 'pago']
-    if extracted.get('tipo_detectado') in tipos_con_id:
+    # Rule 3: valid identification number.
+    # Aplica a los cinco tipos conocidos, que es exactamente TIPOS. Se
+    # usa la constante en vez de repetir la lista aqui, que era la
+    # tercera copia del mismo vocabulario.
+    if extracted.get('tipo_detectado') in TIPOS:
         id_num = extracted.get('numero_identificacion')
         if not id_num:
             problemas.append('Numero de identificacion ausente')

@@ -1,0 +1,17 @@
+# Tope de subida, en MB.
+#
+# Streamlit recibe el archivo completo en memoria ANTES de que el codigo
+# de la aplicacion lo vea. Por eso el chequeo de tamano que hace
+# `upload_client.py` llega tarde para proteger al servidor: cuando se
+# ejecuta, los bytes ya estan cargados. Este tope si actua antes, en el
+# servidor, y rechaza la subida sin llegar a Python.
+#
+# El valor por defecto de Streamlit son 200 MB. Para fotos de cedulas y
+# diplomas eso es absurdo, y en un demo publico sin autenticacion es una
+# invitacion. 20 MB deja margen sobre el tope de 15 MB que aplica
+# `upload_client.py`, que es el que da el mensaje explicativo al usuario.
+[server]
+maxUploadSize = 20
+
+[browser]
+gatherUsageStats = false

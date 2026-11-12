@@ -6,13 +6,32 @@ from document_validator import validate_document
 from expedient_analyzer import analyze_expedient
 
 
-def process_expedient(aspirante_folder):
-    """Processes the applicant's complete expedient with expedient-level analysis."""
-    
-    print(f"1. Querying institutional system for '{aspirante_folder}'...")
-    documentos = fetch_documents_from_github(aspirante_folder)
-    print(f"   Found {len(documentos)} documents.\n")
-    
+def process_expedient(aspirante_folder, documentos=None):
+    """Processes the applicant's complete expedient with expedient-level analysis.
+
+    `documentos` permite inyectar la lista ya construida, que es como
+    entran los archivos que sube el usuario desde la interfaz. Cuando
+    llega en None se consulta el sistema institucional simulado, que es
+    el comportamiento de siempre.
+
+    El pipeline no pregunta de donde vienen los documentos, y eso es a
+    proposito: mientras cada uno traiga sus cuatro claves, la fuente es
+    irrelevante para los cuatro pasos que siguen. Por eso agregar la
+    carga de archivos no toco ni la extraccion ni las reglas.
+
+    La interfaz ademas ya tenia los documentos en la mano antes de
+    llamar aqui, porque los usa para validar que el aspirante exista.
+    Pasarlos por parametro evita la segunda consulta identica a la API
+    de GitHub que se hacia en cada corrida.
+    """
+
+    if documentos is None:
+        print(f"1. Querying institutional system for '{aspirante_folder}'...")
+        documentos = fetch_documents_from_github(aspirante_folder)
+        print(f"   Found {len(documentos)} documents.\n")
+    else:
+        print(f"1. Using {len(documentos)} documents provided by the caller.\n")
+
     print("2. Processing each document with Vision + Validation...\n")
     
     resultados = []
